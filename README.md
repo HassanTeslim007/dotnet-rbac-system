@@ -59,17 +59,19 @@ An isolated, swappable file upload module with no vendor lock-in baked into the 
 
 ## Project Structure
 
+```
 dotnet-rbac-system/
-- Controllers/   API endpoints
-- Models/        Domain entities (User, Role, Permission, EmailLog, etc.)
-- DTOs/          Request/response shapes exposed to clients
-- Services/      Business logic (auth, role assignment, permission checks, email, file upload)
-- Data/          DbContext, migrations, seed data
-- Tests/
-- Program.cs     App entry point and middleware pipeline
-- appsettings.json   Configuration (do not commit real secrets here)
+├── Rbac-System.sln
+├── src/
+│   ├── Rbac-System.Domain/          # Entities, value objects — no external dependencies
+│   ├── Rbac-System.Application/     # Interfaces, use-cases — depends on Domain only
+│   ├── Rbac-System.Infrastructure/  # EF Core, PostgreSQL, repositories — depends on Application + Domain
+│   └── Rbac-System.API/             # Controllers, Swagger, Program.cs — depends on Application + Infrastructure
+└── tests/
+    └── Rbac-System.Tests/           # xUnit tests — references all src layers
+```
 
-Note: given the scope here, Services/ will likely need subfolders (Auth/, Email/, FileUpload/) as this grows. Open to discussion once implementation starts.
+Dependency direction: `API → Infrastructure → Application → Domain` (Domain has zero outbound dependencies).
 
 ## Getting Started
 
@@ -86,35 +88,71 @@ Note: given the scope here, Services/ will likely need subfolders (Auth/, Email/
 
 Clone the repo:
 
+```bash
 git clone https://github.com/Steve-s-Circle-on-System-Design/dotnet-rbac-system.git
 cd dotnet-rbac-system
-dotnet restore
+dotnet restore Rbac-System.sln
+```
 
 ### Configuration
 
-Do not put real credentials or secrets in appsettings.json since that file gets committed to the repo. Use dotnet user-secrets instead for local development:
+Do not commit real credentials. Use `dotnet user-secrets` for local development (run from the `src/Rbac-System.API` directory):
 
+```bash
+cd src/Rbac-System.API
 dotnet user-secrets init
 dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Database=rbac_system;Username=postgres;Password=yourpassword"
-dotnet user-secrets set "Jwt:Key" "your-local-dev-secret-here"
+dotnet user-secrets set "Jwt:Key" "your-local-dev-secret-at-least-32-chars"
 dotnet user-secrets set "Cloudinary:CloudName" "your-cloud-name"
 dotnet user-secrets set "Cloudinary:ApiKey" "your-api-key"
 dotnet user-secrets set "Cloudinary:ApiSecret" "your-api-secret"
 dotnet user-secrets set "Google:ClientId" "your-google-client-id"
 dotnet user-secrets set "Google:ClientSecret" "your-google-client-secret"
+```
+
+### Build
+
+```bash
+dotnet build Rbac-System.sln
+```
+
+### Test
+
+```bash
+dotnet test Rbac-System.sln
+```
+
+### Format
+
+```bash
+# Check formatting without making changes (used in CI)
+dotnet format Rbac-System.sln --verify-no-changes
+
+# Apply formatting
+dotnet format Rbac-System.sln
+```
 
 ### Run
 
-dotnet run
+```bash
+dotnet run --project src/Rbac-System.API
+```
 
-Swagger UI will be available in the browser once the project is running in development mode, at a URL shown in the terminal output (something like https://localhost:xxxx/swagger).
+Swagger UI loads at `http://localhost:<port>` (root URL) in Development mode.
 
-### Apply migrations
+### Apply EF Core Migrations
 
-Once the DbContext and initial models are in place:
+```bash
+# Add a migration (run from repo root)
+dotnet ef migrations add InitialCreate \
+  --project src/Rbac-System.Infrastructure \
+  --startup-project src/Rbac-System.API
 
-dotnet ef migrations add InitialCreate
-dotnet ef database update
+# Apply to the database
+dotnet ef database update \
+  --project src/Rbac-System.Infrastructure \
+  --startup-project src/Rbac-System.API
+```
 
 ## API Contract
 
