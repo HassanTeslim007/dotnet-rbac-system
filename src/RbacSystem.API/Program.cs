@@ -1,7 +1,8 @@
 using RbacSystem.Application;
+using RbacSystem.Domain.Common;
 using RbacSystem.Infrastructure;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // ── Layer registrations ────────────────────────────────────────────────────
 builder.Services
@@ -54,7 +55,7 @@ builder.Services
     .AddAuthentication(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        var jwtSettings = builder.Configuration.GetSection("Jwt");
+        IConfigurationSection jwtSettings = builder.Configuration.GetSection("Jwt");
         options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -68,15 +69,17 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(AppPolicies.RequireAdmin, policy =>
+        policy.RequireRole(AppRoles.Admin));
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
 // ── Pipeline ───────────────────────────────────────────────────────────────
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
+    _ = app.UseSwagger();
+    _ = app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "RBAC System API v1");
         c.RoutePrefix = string.Empty; // Swagger at root
@@ -89,3 +92,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }
