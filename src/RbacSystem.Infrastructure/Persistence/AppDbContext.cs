@@ -6,45 +6,62 @@ namespace RbacSystem.Infrastructure.Persistence;
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<User> Users => Set<User>();
-    public DbSet<Role> Roles => Set<Role>();
-    public DbSet<Permission> Permissions => Set<Permission>();
-    public DbSet<UserRole> UserRoles => Set<UserRole>();
-    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+    public DbSet<OtpVerification> OtpVerifications => Set<OtpVerification>();
+    public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<FileRecord> Files => Set<FileRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+        _ = modelBuilder.HasPostgresExtension("citext");
+        _ = modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+    }
 
-        // Composite keys for join tables
-        modelBuilder.Entity<UserRole>()
-            .HasKey(ur => new { ur.UserId, ur.RoleId });
-
-        modelBuilder.Entity<RolePermission>()
-            .HasKey(rp => new { rp.RoleId, rp.PermissionId });
-
-        // User
-        modelBuilder.Entity<User>()
-            .HasIndex(u => u.Email)
-            .IsUnique();
-
-        // Role
-        modelBuilder.Entity<Role>()
-            .HasIndex(r => r.Name)
-            .IsUnique();
+    public override int SaveChanges()
+    {
+        SetUpdatedTimestamps();
+        return base.SaveChanges();
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        foreach (var entry in ChangeTracker.Entries<Domain.Common.BaseEntity>())
+        SetUpdatedTimestamps();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void SetUpdatedTimestamps()
+    {
+        // Keep updated_at consistent even when callers forget to set it explicitly.
+        DateTime now = DateTime.UtcNow;
+
+        foreach (Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry in ChangeTracker.Entries())
         {
-            if (entry.State == EntityState.Modified)
+            if (entry.State != EntityState.Modified)
             {
-                entry.Entity.UpdatedAt = DateTime.UtcNow;
+                continue;
+            }
+
+            switch (entry.Entity)
+            {
+                case User user:
+                    user.UpdatedAt = now;
+                    break;
+                case OtpVerification otpVerification:
+                    otpVerification.UpdatedAt = now;
+                    break;
+                case EmailLog emailLog:
+                    emailLog.UpdatedAt = now;
+                    break;
+                case FileRecord file:
+                    file.UpdatedAt = now;
+                    break;
+                default:
+                    break;
             }
         }
-
-        return base.SaveChangesAsync(cancellationToken);
     }
 }

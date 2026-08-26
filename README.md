@@ -4,6 +4,11 @@ Role-Based Access Control (RBAC) system built with ASP.NET Core and Entity Frame
 
 This is the C#/.NET implementation of the team's multi-language RBAC project. Sibling implementations exist in Python (FastAPI), Go, and TypeScript. See the API Contract section below for how this service is expected to line up with those.
 
+> **Current branch status:** the solution contains the Clean Architecture and
+> PostgreSQL/EF Core foundation. The seven-table domain model, entity mappings,
+> and initial migration are implemented. Authentication use cases, repositories,
+> and endpoints will be added with their related features.
+
 ## Key Deliverables
 
 | Feature        | Description |
@@ -63,12 +68,12 @@ An isolated, swappable file upload module with no vendor lock-in baked into the 
 dotnet-rbac-system/
 ├── Rbac-System.sln
 ├── src/
-│   ├── Rbac-System.Domain/          # Entities, value objects — no external dependencies
-│   ├── Rbac-System.Application/     # Interfaces, use-cases — depends on Domain only
-│   ├── Rbac-System.Infrastructure/  # EF Core, PostgreSQL, repositories — depends on Application + Domain
-│   └── Rbac-System.API/             # Controllers, Swagger, Program.cs — depends on Application + Infrastructure
-└── tests/
-    └── Rbac-System.Tests/           # xUnit tests — references all src layers
+│   ├── RbacSystem.Domain/          # Entities, value objects — no external dependencies
+│   ├── RbacSystem.Application/     # Interfaces, use-cases — depends on Domain only
+│   ├── RbacSystem.Infrastructure/  # EF Core, PostgreSQL, repositories — depends on Application + Domain
+│   └── RbacSystem.API/             # Controllers, Swagger, Program.cs — depends on Application + Infrastructure
+└── Tests/
+    └── RbacSystem.Tests/           # xUnit tests — references all src layers
 ```
 
 Dependency direction: `API → Infrastructure → Application → Domain` (Domain has zero outbound dependencies).
@@ -96,19 +101,62 @@ dotnet restore Rbac-System.sln
 
 ### Configuration
 
-Do not commit real credentials. Use `dotnet user-secrets` for local development (run from the `src/Rbac-System.API` directory):
+Do not commit real credentials. The API project already has a `UserSecretsId`.
+Configure local values from the repository root with:
 
 ```bash
-cd src/Rbac-System.API
-dotnet user-secrets init
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Database=rbac_system;Username=postgres;Password=yourpassword"
-dotnet user-secrets set "Jwt:Key" "your-local-dev-secret-at-least-32-chars"
-dotnet user-secrets set "Cloudinary:CloudName" "your-cloud-name"
-dotnet user-secrets set "Cloudinary:ApiKey" "your-api-key"
-dotnet user-secrets set "Cloudinary:ApiSecret" "your-api-secret"
-dotnet user-secrets set "Google:ClientId" "your-google-client-id"
-dotnet user-secrets set "Google:ClientSecret" "your-google-client-secret"
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Database=rbac_system;Username=postgres;Password=yourpassword" --project src/RbacSystem.API
+dotnet user-secrets set "Jwt:Key" "your-local-dev-secret-at-least-32-chars" --project src/RbacSystem.API
+dotnet user-secrets set "Jwt:RefreshTokenHashSecret" "another-local-dev-secret-at-least-32-chars" --project src/RbacSystem.API
+dotnet user-secrets set "Cloudinary:CloudName" "your-cloud-name" --project src/RbacSystem.API
+dotnet user-secrets set "Cloudinary:ApiKey" "your-api-key" --project src/RbacSystem.API
+dotnet user-secrets set "Cloudinary:ApiSecret" "your-api-secret" --project src/RbacSystem.API
+dotnet user-secrets set "Google:ClientId" "your-google-client-id" --project src/RbacSystem.API
+dotnet user-secrets set "Google:ClientSecret" "your-google-client-secret" --project src/RbacSystem.API
 ```
+
+Each contributor uses a separate local database and data. EF Core migration files
+are committed so every contributor and environment shares the same schema; local
+credentials, database dumps, and database data are not committed.
+
+#### Tunable settings
+
+Security costs and token lifespans are configuration, never hardcoded constants, so
+they can be tuned per environment without a code change. Non-secret defaults live in
+`appsettings.json`; override any of them per environment with an environment
+variable, using `__` as the section separator (for example
+`Security__PasswordHashing__WorkFactor=13`).
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `Security:PasswordHashing:WorkFactor` | `12` | BCrypt cost. Each increment doubles hashing time. Valid range 4–31. Lower it in CI to keep test runs fast; raise it as hardware improves. |
+| `Auth:AccessTokenExpiryMinutes` | `15` | Access-token lifespan. |
+| `Auth:RefreshTokenExpiryDays` | `7` | Refresh-token lifespan. |
+| `Auth:EmailVerificationTokenExpiryHours` | `24` | Email-verification token lifespan. |
+| `Auth:OtpExpiryMinutes` | `10` | Magic-login OTP lifespan. |
+| `Jwt:Issuer` | `RbacSystem` | Issuer stamped on, and validated in, access tokens. |
+| `Jwt:Audience` | `RbacSystemUsers` | Audience stamped on, and validated in, access tokens. |
+
+`Security:PasswordHashing:WorkFactor`, `Auth:AccessTokenExpiryMinutes`,
+`Auth:RefreshTokenExpiryDays`, `Jwt:Issuer` and `Jwt:Audience` are read today. The
+remaining `Auth:*` lifespans are the agreed keys for the features that consume them.
+
+Two settings are **secrets** and must never appear in `appsettings.json`. Both are
+required, and the API refuses to start without them:
+
+| Secret | Purpose |
+|---|---|
+| `Jwt:Key` | Signs and validates access tokens. Minimum 32 characters — HMAC-SHA256 rejects anything shorter. |
+| `Jwt:RefreshTokenHashSecret` | Keys the HMAC applied to refresh tokens before storage, so a leaked database cannot be matched against intercepted tokens. Minimum 32 characters. |
+
+Only `Security:PasswordHashing:WorkFactor` is read today, by the registration
+feature. The `Auth:*` lifespans are the agreed keys for the token-issuing features
+and are consumed as those land — they are listed here so that no lifespan is ever
+written as a literal in code.
+
+Secrets — connection strings, JWT signing keys, OAuth client secrets, and email or
+Cloudinary credentials — never belong in `appsettings.json`. Use `dotnet user-secrets`
+locally and environment variables or a managed secret store in production.
 
 ### Build
 
@@ -135,32 +183,93 @@ dotnet format Rbac-System.sln
 ### Run
 
 ```bash
-dotnet run --project src/Rbac-System.API
+dotnet run --project src/RbacSystem.API
 ```
 
-Swagger UI loads at `http://localhost:<port>` (root URL) in Development mode.
+Swagger UI loads at `http://localhost:<port>/swagger` in Development mode, which is
+the URL `launchSettings.json` opens on startup. Use the **Authorize** button with the
+`accessToken` returned by `/api/auth/login` to call protected endpoints.
 
 ### Apply EF Core Migrations
 
 ```bash
 # Add a migration (run from repo root)
 dotnet ef migrations add InitialCreate \
-  --project src/Rbac-System.Infrastructure \
-  --startup-project src/Rbac-System.API
+  --project src/RbacSystem.Infrastructure \
+  --startup-project src/RbacSystem.API \
+  --output-dir Persistence/Migrations
 
 # Apply to the database
 dotnet ef database update \
-  --project src/Rbac-System.Infrastructure \
-  --startup-project src/Rbac-System.API
+  --project src/RbacSystem.Infrastructure \
+  --startup-project src/RbacSystem.API
 ```
+
+Synchronize with the target branch before generating a migration. Do not edit a
+migration after it has reached a shared branch; create a corrective migration.
 
 ## API Contract
 
-Endpoints, request/response shapes, and status codes are still being finalized with the other language teams so that all four implementations expose a consistent contract. This section will be filled in once that's agreed, and should eventually cover:
+### `POST /api/auth/register`
+
+Creates an unverified account with the default `User` role. The request shape matches
+the TypeScript and Python implementations so all four services stay interchangeable.
+
+Request:
+
+```json
+{ "email": "ada@example.com", "password": "Str0ng!Passw0rd" }
+```
+
+The email is trimmed and lowercased before storage and compared case-insensitively.
+The display name is derived from the email's local part, as the other
+implementations do, because the shared contract carries no name field.
+
+Password policy: at least 8 characters, at most 72 UTF-8 bytes (BCrypt ignores input
+beyond that), and at least one lowercase letter, one uppercase letter, and one
+special character.
+
+| Status | Body | When |
+|---|---|---|
+| `201` | `{ "message": "Sign Up successful, verify Email." }` | Account created |
+| `400` | `ProblemDetails` with detail `Email is already registered` | Address already in use |
+| `400` | `ValidationProblemDetails` | Email malformed or password fails the policy |
+
+### `POST /api/auth/login`
+
+Authenticates a credential pair and starts a session. Request:
+
+```json
+{ "email": "ada@example.com", "password": "Str0ng!Passw0rd" }
+```
+
+Only presence and email format are validated. The registration password policy is
+deliberately not applied, so a wrong password returns `401` rather than a `400` that
+would disclose the policy.
+
+| Status | Body | When |
+|---|---|---|
+| `200` | `{ "accessToken", "refreshToken", "tokenType": "Bearer", "expiresIn": 900 }` | Authenticated |
+| `401` | `ProblemDetails`, detail `Invalid email or password` | Unknown email **or** wrong password — identical for both |
+| `403` | detail `Please verify your email to continue` | Email not verified |
+| `403` | detail `Account locked due to multiple failed attempts. Try again later.` | Lockout active |
+| `400` | `ValidationProblemDetails` | Email missing or malformed |
+
+The access token is a JWT carrying `sub`, `email`, `role`, `sid`, `jti` and
+`token_version`, expiring after `Auth:AccessTokenExpiryMinutes`. `sid` is the token
+family — the session identifier that refresh-token rotation will rotate within.
+
+The refresh token is 48 bytes of cryptographic randomness, opaque to clients, valid
+for `Auth:RefreshTokenExpiryDays`. Only its HMAC is stored; the raw value is never
+persisted or logged.
+
+### Remaining endpoints
+
+The rest of the endpoints, request/response shapes, and status codes are still being
+finalized with the other language teams. This section should eventually also cover:
 
 - Auth endpoints (register, login, Google OAuth callback, magic OTP request/verify, email verification, password reset, refresh token)
-- Role and permission management endpoints
-- User-role assignment endpoints
+- User and Admin role-protected endpoints
 - File upload endpoints
 - Admin dashboard endpoints (if built)
 - Expected response formats and error shapes
@@ -171,7 +280,7 @@ Things not locked in yet, tracked here so nobody assumes they're settled:
 
 - Event handling mechanism (MediatR vs BackgroundService vs something else)
 - Email delivery approach (transactional provider like SendGrid/Postmark vs raw SMTP with custom tracking)
-- Whether roles/permissions are seeded or admin-managed at runtime
+- Authorization policies and the exact Admin management endpoint contract
 - Whether the Admin Dashboard is being built for this milestone or deferred
 
 ## Branching & Workflow
@@ -179,4 +288,3 @@ Things not locked in yet, tracked here so nobody assumes they're settled:
 See CONTRIBUTORS.md for branch naming, commit conventions, and PR process.
 
 ## License
-
