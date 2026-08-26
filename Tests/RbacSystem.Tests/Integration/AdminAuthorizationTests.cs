@@ -94,6 +94,19 @@ public class AdminAuthorizationTests(WebApplicationFactoryFixture fixture)
     }
 
     [Fact]
+    public async Task GetAdminEndpoint_WithoutAnyRole_ShouldReturn403Forbidden()
+    {
+        // Arrange
+        string token = await IssueTokenAsync(role: null);
+
+        // Act
+        HttpResponseMessage response = await CreateClient(token).GetAsync("/api/admin");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetAdminEndpoint_WithAdminRole_ShouldReturn200Ok()
     {
         // Arrange
