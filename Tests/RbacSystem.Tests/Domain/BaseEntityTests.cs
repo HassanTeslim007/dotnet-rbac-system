@@ -12,9 +12,9 @@ public class BaseEntityTests
     [Fact]
     public void BaseEntity_CreatedAt_ShouldBeUtcNow()
     {
-        var before = DateTime.UtcNow.AddSeconds(-1);
+        DateTime before = DateTime.UtcNow.AddSeconds(-1);
         var entity = new TestEntity();
-        var after = DateTime.UtcNow.AddSeconds(1);
+        DateTime after = DateTime.UtcNow.AddSeconds(1);
 
         Assert.InRange(entity.CreatedAt, before, after);
     }
