@@ -1,4 +1,4 @@
-namespace RbacSystem.Domain.Common;
+namespace RbacSystem.API.Authorization;
 
 public static class AppRoles
 {

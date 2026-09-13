@@ -1,8 +1,12 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 using RbacSystem.Application.Interfaces.Services;
+using RbacSystem.Domain.Common;
 using RbacSystem.Domain.Entities;
 using RbacSystem.Domain.Enums;
 using RbacSystem.Infrastructure.Configuration;
@@ -14,7 +18,7 @@ namespace RbacSystem.Tests.Integration;
 public class AdminAuthorizationTests(WebApplicationFactoryFixture fixture)
     : IClassFixture<WebApplicationFactoryFixture>
 {
-    private static async Task<string> IssueTokenAsync(UserRole? role = null)
+    private static async Task<string> IssueTokenAsync(UserRole role)
     {
         JwtOptions jwt = new()
         {
@@ -36,7 +40,7 @@ public class AdminAuthorizationTests(WebApplicationFactoryFixture fixture)
             Email = "admin-test@example.com",
             Name = "admin-tester",
             PasswordHash = "$2a$12$hash",
-            Role = role ?? UserRole.User
+            Role = role
         };
 
         IssuedTokens tokens = await tokenService.IssueTokenPairAsync(
@@ -46,6 +50,38 @@ public class AdminAuthorizationTests(WebApplicationFactoryFixture fixture)
             null);
 
         return tokens.AccessToken;
+    }
+
+    private static string CreateTokenWithoutRole()
+    {
+        SigningCredentials credentials = new(
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(AuthApiFactory.SigningKey)),
+            SecurityAlgorithms.HmacSha256);
+
+        DateTime issuedAt = DateTime.UtcNow;
+        DateTime expiresAt = issuedAt.AddMinutes(15);
+
+        Dictionary<string, object> claims = new(StringComparer.Ordinal)
+        {
+            [JwtRegisteredClaimNames.Sub] = EntityId.New(),
+            [JwtRegisteredClaimNames.Email] = "norole@example.com",
+            [JwtRegisteredClaimNames.Sid] = EntityId.New(),
+            [JwtRegisteredClaimNames.Jti] = EntityId.New(),
+            [JwtTokenService.TokenVersionClaim] = "1"
+        };
+
+        SecurityTokenDescriptor descriptor = new()
+        {
+            Claims = claims,
+            Issuer = AuthApiFactory.Issuer,
+            Audience = AuthApiFactory.Audience,
+            IssuedAt = issuedAt,
+            NotBefore = issuedAt,
+            Expires = expiresAt,
+            SigningCredentials = credentials
+        };
+
+        return new JsonWebTokenHandler().CreateToken(descriptor);
     }
 
     private HttpClient CreateClient(string? accessToken = null)
@@ -97,7 +133,7 @@ public class AdminAuthorizationTests(WebApplicationFactoryFixture fixture)
     public async Task GetAdminEndpoint_WithoutAnyRole_ShouldReturn403Forbidden()
     {
         // Arrange
-        string token = await IssueTokenAsync(role: null);
+        string token = CreateTokenWithoutRole();
 
         // Act
         HttpResponseMessage response = await CreateClient(token).GetAsync("/api/admin");

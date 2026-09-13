@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using RbacSystem.Domain.Common;
+using RbacSystem.API.Authorization;
 
 namespace RbacSystem.API.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/admin")]
 [Authorize(Policy = AppPolicies.RequireAdmin)]
 public class AdminController : ControllerBase
 {
