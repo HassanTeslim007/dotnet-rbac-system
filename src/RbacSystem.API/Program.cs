@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using RbacSystem.Application;
+using RbacSystem.Application.Common.Configuration;
 using RbacSystem.Domain.Common;
 using RbacSystem.Infrastructure;
 using RbacSystem.Infrastructure.Configuration;
@@ -56,6 +57,7 @@ builder.Services.AddSwaggerGen(options =>
 // that into a startup failure rather than one surfacing on the first login attempt.
 builder.Services.AddOptions<JwtOptions>().ValidateOnStart();
 builder.Services.AddOptions<AuthTokenOptions>().ValidateOnStart();
+builder.Services.AddOptions<AccountLockoutOptions>().ValidateOnStart();
 
 IConfigurationSection jwtSection = builder.Configuration.GetSection("Jwt");
 
